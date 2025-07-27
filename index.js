@@ -2,7 +2,8 @@ import { Client, GatewayIntentBits, Events, Collection, ModalBuilder, TextInputB
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { db, ref, set, get, update, remove } from './firebase.js';
+import { db } from './firebase.js'; // db ahora es Firestore
+import { doc, setDoc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -75,41 +76,41 @@ client.on(Events.InteractionCreate, async interaction => {
 
   if (interaction.isModalSubmit()) {
     const userId = interaction.user.id;
-    const userRef = ref(db, `cuentas/${userId}`);
+    const userRef = doc(db, 'cuentas', userId);
 
     if (interaction.customId === 'modal_crear') {
       const nombre = interaction.fields.getTextInputValue('nombre_usuario');
       const contraseña = interaction.fields.getTextInputValue('contraseña');
 
-      const snapshot = await get(userRef);
+      const snapshot = await getDoc(userRef);
       if (snapshot.exists()) {
         return interaction.reply({ content: '❌ Ya tenés una cuenta registrada.', ephemeral: true });
       }
 
-      await set(userRef, { nombre, contraseña });
+      await setDoc(userRef, { nombre, contraseña });
       return interaction.reply({ content: '✅ Cuenta creada correctamente.', ephemeral: true });
     }
 
     if (interaction.customId === 'modal_cambiar') {
       const nueva = interaction.fields.getTextInputValue('nueva_contraseña');
 
-      const snapshot = await get(userRef);
+      const snapshot = await getDoc(userRef);
       if (!snapshot.exists()) {
         return interaction.reply({ content: '⚠️ No tenés cuenta registrada.', ephemeral: true });
       }
 
-      await update(userRef, { contraseña: nueva });
+      await updateDoc(userRef, { contraseña: nueva });
       return interaction.reply({ content: '🔐 Contraseña actualizada.', ephemeral: true });
     }
   }
 });
 
 client.on(Events.GuildMemberRemove, async member => {
-  await remove(ref(db, `cuentas/${member.id}`));
+  await deleteDoc(doc(db, 'cuentas', member.id));
 });
 
 client.on(Events.GuildBanAdd, async ban => {
-  await remove(ref(db, `cuentas/${ban.user.id}`));
+  await deleteDoc(doc(db, 'cuentas', ban.user.id));
 });
 
 client.login(process.env.DISCORD_TOKEN);
