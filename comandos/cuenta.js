@@ -1,45 +1,73 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { doc, getDoc, setDoc } = require('firebase-admin/firestore');
+const { db } = require('../firebase'); // Ruta según dónde tengas el archivo firebase.js
 
-export default {
+module.exports = {
   data: new SlashCommandBuilder()
     .setName('cuenta')
-    .setDescription('Administrá tu cuenta de acceso'),
+    .setDescription('Registra o consulta tu cuenta en el sistema.')
+    .addStringOption(option =>
+      option.setName('clave')
+        .setDescription('Clave de tu cuenta (si es tu primer registro)')
+        .setRequired(false)
+    ),
+
   async execute(interaction) {
-    const embed = new EmbedBuilder()
-      .setTitle('🧾 Panel de cuenta personal')
-      .setDescription('Desde este panel podés crear o administrar tu cuenta para acceder a zonas privadas de nuestra web.')
-      .addFields(
-        {
-          name: '✅ Crear cuenta',
-          value: 'Crea una nueva cuenta ingresando un nombre de usuario y contraseña.',
-        },
-        {
-          name: '🔁 Cambiar contraseña',
-          value: 'Si ya tenés cuenta, podés actualizar tu contraseña.',
-        },
-        {
-          name: '⚠️ Importante',
-          value: 'Tu cuenta se eliminará automáticamente si abandonás el servidor o sos kickeado/baneado.',
-        }
-      )
-      .setColor('#2F3136')
-      .setFooter({ text: 'Tu información está vinculada a tu cuenta de Discord.' });
+    const userId = interaction.user.id;
+    const usuario = `<@${userId}>`;
+    const clave = interaction.options.getString('clave');
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('crear_cuenta')
-        .setLabel('Crear cuenta')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('cambiar_contraseña')
-        .setLabel('Cambiar contraseña')
-        .setStyle(ButtonStyle.Primary)
-    );
+    const cuentaRef = doc(db, 'cuentas', userId);
+    const cuentaSnap = await getDoc(cuentaRef);
 
-    await interaction.reply({
-      embeds: [embed],
-      components: [row],
-      ephemeral: true
-    });
-  },
+    // Detectar el rol principal (excluyendo @everyone)
+    const roles = interaction.member.roles.cache;
+    const rol = roles.map(r => r.name).find(name => name !== '@everyone') || 'Sin rol';
+
+    if (cuentaSnap.exists()) {
+      const datos = cuentaSnap.data();
+
+      const embed = new EmbedBuilder()
+        .setTitle('📄 Cuenta encontrada')
+        .setColor('Green')
+        .addFields(
+          { name: '👤 Usuario', value: datos.usuario || usuario, inline: true },
+          { name: '🔑 Clave', value: datos.clave || 'No registrada', inline: true },
+          { name: '🎫 Viaje actual', value: datos.viaje || '0', inline: true },
+          { name: '🧳 Viajes totales', value: datos.viajes || '0', inline: true },
+          { name: '🛡️ Rol', value: datos.rol || 'Sin rol', inline: true },
+        )
+        .setFooter({ text: 'Sistema de cuentas GTG' })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
+    } else if (clave) {
+      await setDoc(cuentaRef, {
+        usuario: usuario,
+        clave: clave,
+        viaje: "0",
+        viajes: "0",
+        rol: rol
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle('✅ Cuenta registrada')
+        .setColor('Blue')
+        .setDescription(`Tu cuenta ha sido registrada correctamente.`)
+        .addFields(
+          { name: '👤 Usuario', value: usuario, inline: true },
+          { name: '🔑 Clave', value: clave, inline: true },
+          { name: '🛡️ Rol', value: rol, inline: true }
+        )
+        .setFooter({ text: 'Sistema de cuentas GTG' })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
+    } else {
+      await interaction.reply({
+        content: '❌ No tienes cuenta registrada. Usa `/cuenta clave:(Contraseña)` para registrarte.',
+        ephemeral: true
+      });
+    }
+  }
 };
