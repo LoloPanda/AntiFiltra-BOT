@@ -10,5 +10,12 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);  // <-- crea la instancia de Firestore
 
+export { db };
 export { app };
+
+
+
+
