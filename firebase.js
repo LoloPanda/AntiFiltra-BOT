@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore'; // <-- ¡ESTO es lo que faltaba!
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -10,11 +11,10 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);  // <-- crea la instancia de Firestore
+const db = getFirestore(app);
 
 export { db };
 export { app };
-
 
 
 
