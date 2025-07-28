@@ -1,37 +1,33 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase.js';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('cuenta')
-    .setDescription('🔐 Abrir panel para crear o cambiar cuenta'),
+    .setDescription('Administrar tu cuenta'),
 
   async execute(interaction) {
-    const embed = new EmbedBuilder()
-      .setTitle('🛠️ Panel de Cuenta')
-      .setDescription(
-        'Selecciona una opción para administrar tu cuenta:\n\n' +
-        '🆕 **Crear Cuenta:** Crea una nueva cuenta con usuario y contraseña.\n' +
-        '🔑 **Cambiar Contraseña:** Cambia la contraseña de tu cuenta actual.'
-      )
-      .setColor('#0099ff')
-      .setThumbnail('https://live.staticflickr.com/65535/54683564133_4910efc5be.jpg');
-
+    // Al ejecutar /cuenta, enviamos un panel con botones para crear cuenta o cambiar contraseña
     const botones = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
           .setCustomId('crear_cuenta')
-          .setLabel('🆕 Crear Cuenta')
-          .setStyle(ButtonStyle.Primary),
+          .setLabel('🆕 Crear cuenta')
+          .setStyle(ButtonStyle.Success),
+
         new ButtonBuilder()
           .setCustomId('cambiar_contraseña')
-          .setLabel('🔑 Cambiar Contraseña')
-          .setStyle(ButtonStyle.Secondary)
+          .setLabel('🔑 Cambiar contraseña')
+          .setStyle(ButtonStyle.Primary)
       );
 
     await interaction.reply({
-      embeds: [embed],
+      content: '🔐 Panel de administración de cuenta:\n\nSelecciona una opción:',
       components: [botones],
-      ephemeral: true
+      ephemeral: true,
     });
-  }
+  },
+
+  // Este módulo no maneja modales ni botones, eso va en index.js o en un handler.
 };
