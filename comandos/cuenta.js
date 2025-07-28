@@ -1,73 +1,37 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { doc, getDoc, setDoc } = require('firebase-admin/firestore');
-const { db } = require('../firebase'); // Ruta según dónde tengas el archivo firebase.js
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 
-module.exports = {
+export default {
   data: new SlashCommandBuilder()
     .setName('cuenta')
-    .setDescription('Registra o consulta tu cuenta en el sistema.')
-    .addStringOption(option =>
-      option.setName('clave')
-        .setDescription('Clave de tu cuenta (si es tu primer registro)')
-        .setRequired(false)
-    ),
+    .setDescription('🔐 Abrir panel para crear o cambiar cuenta'),
 
   async execute(interaction) {
-    const userId = interaction.user.id;
-    const usuario = `<@${userId}>`;
-    const clave = interaction.options.getString('clave');
+    const embed = new EmbedBuilder()
+      .setTitle('🛠️ Panel de Cuenta')
+      .setDescription(
+        'Selecciona una opción para administrar tu cuenta:\n\n' +
+        '🆕 **Crear Cuenta:** Crea una nueva cuenta con usuario y contraseña.\n' +
+        '🔑 **Cambiar Contraseña:** Cambia la contraseña de tu cuenta actual.'
+      )
+      .setColor('#0099ff')
+      .setThumbnail('https://live.staticflickr.com/65535/54683564133_4910efc5be.jpg');
 
-    const cuentaRef = doc(db, 'cuentas', userId);
-    const cuentaSnap = await getDoc(cuentaRef);
+    const botones = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('crear_cuenta')
+          .setLabel('🆕 Crear Cuenta')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('cambiar_contraseña')
+          .setLabel('🔑 Cambiar Contraseña')
+          .setStyle(ButtonStyle.Secondary)
+      );
 
-    // Detectar el rol principal (excluyendo @everyone)
-    const roles = interaction.member.roles.cache;
-    const rol = roles.map(r => r.name).find(name => name !== '@everyone') || 'Sin rol';
-
-    if (cuentaSnap.exists()) {
-      const datos = cuentaSnap.data();
-
-      const embed = new EmbedBuilder()
-        .setTitle('📄 Cuenta encontrada')
-        .setColor('Green')
-        .addFields(
-          { name: '👤 Usuario', value: datos.usuario || usuario, inline: true },
-          { name: '🔑 Clave', value: datos.clave || 'No registrada', inline: true },
-          { name: '🎫 Viaje actual', value: datos.viaje || '0', inline: true },
-          { name: '🧳 Viajes totales', value: datos.viajes || '0', inline: true },
-          { name: '🛡️ Rol', value: datos.rol || 'Sin rol', inline: true },
-        )
-        .setFooter({ text: 'Sistema de cuentas GTG' })
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [embed] });
-    } else if (clave) {
-      await setDoc(cuentaRef, {
-        usuario: usuario,
-        clave: clave,
-        viaje: "0",
-        viajes: "0",
-        rol: rol
-      });
-
-      const embed = new EmbedBuilder()
-        .setTitle('✅ Cuenta registrada')
-        .setColor('Blue')
-        .setDescription(`Tu cuenta ha sido registrada correctamente.`)
-        .addFields(
-          { name: '👤 Usuario', value: usuario, inline: true },
-          { name: '🔑 Clave', value: clave, inline: true },
-          { name: '🛡️ Rol', value: rol, inline: true }
-        )
-        .setFooter({ text: 'Sistema de cuentas GTG' })
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [embed] });
-    } else {
-      await interaction.reply({
-        content: '❌ No tienes cuenta registrada. Usa `/cuenta clave:(Contraseña)` para registrarte.',
-        ephemeral: true
-      });
-    }
+    await interaction.reply({
+      embeds: [embed],
+      components: [botones],
+      ephemeral: true
+    });
   }
 };
