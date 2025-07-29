@@ -1,14 +1,27 @@
-import { Client, GatewayIntentBits, Events, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import dotenv from 'dotenv';
-dotenv.config();
-
+import { Client, GatewayIntentBits, Events, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'url';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// --- FIREBASE CONFIG (sin .env) ---
+const firebaseConfig = {
+  apiKey: 'TU_API_KEY',
+  authDomain: 'TU_AUTH_DOMAIN',
+  projectId: 'TU_PROJECT_ID',
+  storageBucket: 'TU_STORAGE_BUCKET',
+  messagingSenderId: 'TU_MSG_ID',
+  appId: 'TU_APP_ID',
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// --- CLIENT DISCORD ---
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
@@ -16,20 +29,17 @@ client.commands = new Collection();
 
 const comandosPath = path.join(__dirname, 'comandos');
 const commandFiles = fs.readdirSync(comandosPath).filter(file => file.endsWith('.js'));
-
 for (const file of commandFiles) {
   const command = await import(path.join(comandosPath, file));
   client.commands.set(command.default.data.name, command.default);
 }
 
 client.on(Events.InteractionCreate, async interaction => {
-  // Comandos slash
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
-
     try {
-      await command.execute(interaction, client);
+      await command.execute(interaction, client, db);
     } catch (error) {
       console.error(error);
       if (!interaction.replied) {
@@ -38,7 +48,6 @@ client.on(Events.InteractionCreate, async interaction => {
     }
   }
 
-  // Botones
   if (interaction.isButton()) {
     if (interaction.customId === 'crear_cuenta') {
       const modal = new ModalBuilder()
@@ -61,15 +70,34 @@ client.on(Events.InteractionCreate, async interaction => {
           )
         );
       await interaction.showModal(modal);
-    } else if (interaction.customId === 'cambiar_contraseña') {
+    }
+
+    if (interaction.customId.startsWith('confirmar_cambio_')) {
+      const userId = interaction.customId.split('_')[2];
+      const modal = new ModalBuilder()
+        .setCustomId(`nueva_contraseña_${userId}`)
+        .setTitle('Nueva Contraseña')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('nueva_pass')
+              .setLabel('Nueva contraseña')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+      await interaction.showModal(modal);
+    }
+
+    if (interaction.customId === 'cambiar_contraseña') {
       const modal = new ModalBuilder()
         .setCustomId('modal_cambiar')
         .setTitle('Cambiar contraseña')
         .addComponents(
           new ActionRowBuilder().addComponents(
             new TextInputBuilder()
-              .setCustomId('nueva_contraseña')
-              .setLabel('Nueva contraseña')
+              .setCustomId('usuario')
+              .setLabel('Usuario registrado')
               .setStyle(TextInputStyle.Short)
               .setRequired(true)
           )
@@ -78,32 +106,68 @@ client.on(Events.InteractionCreate, async interaction => {
     }
   }
 
-  // Modales
   if (interaction.isModalSubmit()) {
-    // IMPORTANTE: Importa firebase.js donde tengas las funciones para Firestore
-    // Por ejemplo:
-    // import { db, doc, getDoc, setDoc, updateDoc } from './firebase.js';
-    // Como no puedo hacer import dinámico aquí, asegúrate que firebase esté importado en este archivo o maneja este código en comandos.
+    if (interaction.customId === 'modal_crear') {
+      const nombre = interaction.fields.getTextInputValue('nombre_usuario');
+      const pass = interaction.fields.getTextInputValue('contraseña');
+      const miembro = interaction.member;
 
-    // Aquí pondremos la lógica para crear y cambiar contraseña (ideal manejarla en comando o módulo aparte).
+      const rolTexto = miembro.roles.cache.find(r =>
+        ['Jefe', 'Secretario', 'Moderador', 'Chofer'].includes(r.name)
+      )?.name || 'Desconocido';
 
-    // Para que funcione, podés disparar eventos o usar handlers en el comando /cuenta.
+      await setDoc(doc(db, 'cuentas', interaction.user.id), {
+        usuario: nombre,
+        contraseña: pass,
+        rol: rolTexto,
+        viaje: '',
+        viajes: [],
+      });
 
-    // Para simplificar, este código lo manejarás dentro del comando /cuenta que te paso a continuación.
+      await interaction.reply({ content: `✅ Cuenta creada como ${nombre} con rol ${rolTexto}`, ephemeral: true });
+    }
+
+    if (interaction.customId === 'modal_cambiar') {
+      const usuario = interaction.fields.getTextInputValue('usuario');
+      const snapshot = await getDoc(doc(db, 'cuentas', interaction.user.id));
+
+      if (!snapshot.exists() || snapshot.data().usuario !== usuario) {
+        return await interaction.reply({ content: '❌ Usuario no encontrado o no coincide con tu ID.', ephemeral: true });
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('Confirmación de cambio de contraseña')
+        .setDescription('Haz clic en el botón para confirmar el cambio de contraseña.')
+        .setColor('Orange');
+
+      const boton = new ButtonBuilder()
+        .setLabel('Confirmar')
+        .setStyle(ButtonStyle.Danger)
+        .setCustomId(`confirmar_cambio_${interaction.user.id}`);
+
+      await interaction.user.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(boton)] });
+      await interaction.reply({ content: '📩 Te enviamos un DM para confirmar.', ephemeral: true });
+    }
+
+    if (interaction.customId.startsWith('nueva_contraseña_')) {
+      const userId = interaction.customId.split('_')[2];
+      const nuevaPass = interaction.fields.getTextInputValue('nueva_pass');
+      await updateDoc(doc(db, 'cuentas', userId), {
+        contraseña: nuevaPass,
+      });
+
+      await interaction.reply({ content: '✅ Contraseña actualizada con éxito.', ephemeral: true });
+    }
   }
 });
 
-// Cuando un miembro sale o es baneado, borrar su cuenta de Firestore
 client.on(Events.GuildMemberRemove, async member => {
-  const { remove, doc } = await import('firebase/firestore');
-  const { db } = await import('./firebase.js');
-  await remove(doc(db, 'cuentas', member.id));
+  await deleteDoc(doc(db, 'cuentas', member.id));
 });
 
 client.on(Events.GuildBanAdd, async ban => {
-  const { remove, doc } = await import('firebase/firestore');
-  const { db } = await import('./firebase.js');
-  await remove(doc(db, 'cuentas', ban.user.id));
+  await deleteDoc(doc(db, 'cuentas', ban.user.id));
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// --- LOGIN ---
+client.login('TU_TOKEN_DE_DISCORD');
