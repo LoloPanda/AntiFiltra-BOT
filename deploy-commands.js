@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'url';
 
-const DISCORD_TOKEN = "process.env.DISCORD_TOKEN";
-const CLIENT_ID = "process.env.CLIENT_ID";
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,7 +15,8 @@ const commandFiles = fs.readdirSync(comandosPath).filter(file => file.endsWith('
 const commands = [];
 
 for (const file of commandFiles) {
-  const command = await import(path.join(comandosPath, file));
+  const filePath = path.join(comandosPath, file);
+  const command = await import(filePath);
   if (command.default && command.default.data) {
     commands.push(command.default.data.toJSON());
   }
