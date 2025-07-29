@@ -2,8 +2,9 @@ import { REST, Routes } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
-dotenv.config();
+
+const DISCORD_TOKEN = 'TU_TOKEN_ACÁ';
+const CLIENT_ID = 'TU_CLIENT_ID_ACÁ';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,13 +21,13 @@ for (const file of commandFiles) {
   }
 }
 
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
 try {
   console.log('🚀 Registrando comandos (/) en Discord...');
 
   await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
+    Routes.applicationCommands(CLIENT_ID),
     { body: commands }
   );
 
