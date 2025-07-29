@@ -1,155 +1,196 @@
-import { Client, GatewayIntentBits, Partials, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, InteractionType } from 'discord.js';
-import { config } from 'dotenv';
-import { db } from './firebase.js';
-import fs from 'node:fs';
-import path from 'node:path';
+import { Client, GatewayIntentBits, Events, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
-config();
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: [Partials.Channel]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
-
 client.commands = new Collection();
 
-// Cargar comandos
-const commandsPath = path.join('./comandos');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+const comandosPath = path.join(__dirname, 'comandos');
+const commandFiles = fs.readdirSync(comandosPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-  const command = await import(`./comandos/${file}`);
+  const command = await import(path.join(comandosPath, file));
   client.commands.set(command.default.data.name, command.default);
 }
 
-client.on('ready', () => {
-  console.log(`✅ Bot conectado como ${client.user.tag}`);
-});
-
-client.on('interactionCreate', async interaction => {
+client.on(Events.InteractionCreate, async interaction => {
+  // Slash commands
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
+
     try {
-      await command.execute(interaction, client, db);
+      await command.execute(interaction, client);
     } catch (error) {
       console.error(error);
-      await interaction.reply({ content: '❌ Error al ejecutar el comando.', ephemeral: true });
+      if (!interaction.replied) {
+        await interaction.reply({ content: '❌ Hubo un error ejecutando el comando.', ephemeral: true });
+      }
     }
   }
 
   // Botones
   if (interaction.isButton()) {
-    const { customId, user } = interaction;
-
-    if (customId === 'crearCuenta') {
+    if (interaction.customId === 'crear_cuenta') {
       const modal = new ModalBuilder()
-        .setCustomId('modalCrearCuenta')
-        .setTitle('Crear cuenta');
-
-      const inputs = [
-        new TextInputBuilder().setCustomId('usuario').setLabel('Nombre de Usuario').setStyle(TextInputStyle.Short).setRequired(true),
-        new TextInputBuilder().setCustomId('discord').setLabel('Usuario de Discord').setStyle(TextInputStyle.Short).setRequired(true),
-        new TextInputBuilder().setCustomId('clave').setLabel('Contraseña').setStyle(TextInputStyle.Short).setRequired(true)
-      ];
-
-      modal.addComponents(inputs.map(input => new ActionRowBuilder().addComponents(input)));
+        .setCustomId('modal_crear')
+        .setTitle('Crear cuenta')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('nombre_usuario')
+              .setLabel('Nombre de usuario')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true),
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('discord_usuario')
+              .setLabel('Usuario de Discord')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true),
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('contraseña')
+              .setLabel('Contraseña')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true),
+          ),
+        );
       await interaction.showModal(modal);
-
-    } else if (customId === 'cambiarClave') {
+    } else if (interaction.customId === 'cambiar_contraseña') {
       const modal = new ModalBuilder()
-        .setCustomId('modalVerificarCuenta')
-        .setTitle('Verificación');
-
-      const usuario = new TextInputBuilder()
-        .setCustomId('usuarioVerificar')
-        .setLabel('Usuario registrado')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(usuario));
-      await interaction.showModal(modal);
-
-    } else if (customId.startsWith('confirmarCambio_')) {
-      const usuario = customId.split('_')[1];
-      const modal = new ModalBuilder()
-        .setCustomId(`modalNuevaClave_${usuario}`)
-        .setTitle('Nueva contraseña');
-
-      const nuevaClave = new TextInputBuilder()
-        .setCustomId('nuevaClave')
-        .setLabel('Nueva Contraseña')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(nuevaClave));
+        .setCustomId('modal_cambiar')
+        .setTitle('Cambiar contraseña')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('usuario_cambiar')
+              .setLabel('Usuario (ej: @usuario)')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true),
+          ),
+        );
       await interaction.showModal(modal);
     }
   }
 
-  // Modals
-  if (interaction.type === InteractionType.ModalSubmit) {
-    if (interaction.customId === 'modalCrearCuenta') {
-      const usuario = interaction.fields.getTextInputValue('usuario');
-      const discord = interaction.fields.getTextInputValue('discord');
-      const clave = interaction.fields.getTextInputValue('clave');
-      const member = await interaction.guild.members.fetch(interaction.user.id);
-      const rol = member.roles.cache.find(r => ['Jefe', 'Secretario', 'Chofer', 'Moderador'].includes(r.name))?.name || 'Sin Rol';
+  // Modales
+  if (interaction.isModalSubmit()) {
+    // Importamos funciones Firestore y cliente Discord
+    const { db, doc, getDoc, setDoc, updateDoc } = await import('./firebase.js');
+    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
 
-      try {
-        await db.collection('cuentas').doc(usuario).set({
-          usuario,
-          discord,
-          clave,
-          rol
-        });
-        await interaction.reply({ content: '✅ Cuenta creada con éxito.', ephemeral: true });
-      } catch (err) {
-        console.error(err);
-        await interaction.reply({ content: '❌ Error al guardar la cuenta.', ephemeral: true });
+    if (interaction.customId === 'modal_crear') {
+      // Obtener datos del modal
+      const nombre_usuario = interaction.fields.getTextInputValue('nombre_usuario');
+      const discord_usuario = interaction.fields.getTextInputValue('discord_usuario');
+      const contraseña = interaction.fields.getTextInputValue('contraseña');
+
+      // Obtener rol simple en texto
+      const member = interaction.guild.members.cache.get(interaction.user.id);
+      let rolSimple = 'Sin rol';
+      const rolesPrioridad = ['Jefe', 'Secretario', 'Moderador', 'Chofer'];
+      for (const r of rolesPrioridad) {
+        if (member.roles.cache.some(role => role.name === r)) {
+          rolSimple = r;
+          break;
+        }
       }
 
-    } else if (interaction.customId === 'modalVerificarCuenta') {
-      const usuario = interaction.fields.getTextInputValue('usuarioVerificar');
-      const doc = await db.collection('cuentas').doc(usuario).get();
-      if (!doc.exists) return interaction.reply({ content: '❌ Usuario no encontrado.', ephemeral: true });
+      // Guardar en Firestore
+      await setDoc(doc(db, 'cuentas', interaction.user.id), {
+        clave: contraseña,
+        usuario: discord_usuario,
+        rol: rolSimple,
+        nombre_usuario: nombre_usuario,
+      });
 
-      try {
-        const embed = new EmbedBuilder()
-          .setTitle('Confirmación de cambio de contraseña')
-          .setDescription(`¿Confirmás que querés cambiar la contraseña de la cuenta **${usuario}**?`)
-          .setColor('Blue');
+      await interaction.reply({ content: '✅ Cuenta creada correctamente.', ephemeral: true });
+    }
 
-        const button = new ButtonBuilder()
-          .setLabel('Sí, confirmar')
+    if (interaction.customId === 'modal_cambiar') {
+      const usuario_cambiar = interaction.fields.getTextInputValue('usuario_cambiar');
+
+      // Buscar cuenta en Firestore
+      const refCuenta = doc(db, 'cuentas', interaction.user.id);
+      const docSnap = await getDoc(refCuenta);
+      if (!docSnap.exists()) {
+        return interaction.reply({ content: '❌ No se encontró cuenta asociada.', ephemeral: true });
+      }
+
+      // Enviar DM con botón para confirmar cambio
+      const usuarioDiscord = await client.users.fetch(interaction.user.id);
+      const embedConfirm = new EmbedBuilder()
+        .setTitle('Confirmar cambio de contraseña')
+        .setDescription('Si solicitaste el cambio de contraseña, pulsa el botón para continuar.')
+        .setColor('Yellow');
+
+      const botonConfirm = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('confirmar_cambio')
+          .setLabel('Confirmar')
           .setStyle(ButtonStyle.Success)
-          .setCustomId(`confirmarCambio_${usuario}`);
+      );
 
-        await interaction.user.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(button)] });
-        await interaction.reply({ content: '✅ Te enviamos un mensaje privado para confirmar.', ephemeral: true });
-      } catch (err) {
-        await interaction.reply({ content: '❌ No pudimos enviarte un DM.', ephemeral: true });
-      }
+      await usuarioDiscord.send({ embeds: [embedConfirm], components: [botonConfirm] });
 
-    } else if (interaction.customId.startsWith('modalNuevaClave_')) {
-      const usuario = interaction.customId.split('_')[1];
-      const nuevaClave = interaction.fields.getTextInputValue('nuevaClave');
+      await interaction.reply({ content: 'Se envió un DM para confirmar el cambio.', ephemeral: true });
+    }
 
-      try {
-        await db.collection('cuentas').doc(usuario).update({ clave: nuevaClave });
-        await interaction.reply({ content: '✅ Contraseña actualizada.', ephemeral: true });
-      } catch (err) {
-        await interaction.reply({ content: '❌ Error al actualizar.', ephemeral: true });
-      }
+    if (interaction.customId === 'modal_nueva_contraseña') {
+      const nuevaContraseña = interaction.fields.getTextInputValue('nueva_contraseña');
+      const userId = interaction.user.id;
+
+      const refCuenta = doc(db, 'cuentas', userId);
+      await updateDoc(refCuenta, { clave: nuevaContraseña });
+
+      await interaction.reply({ content: '✅ Contraseña cambiada correctamente.', ephemeral: true });
+    }
+  }
+
+  // Botón confirmar cambio de contraseña por DM
+  if (interaction.isButton()) {
+    if (interaction.customId === 'confirmar_cambio') {
+      // Abrir modal para nueva contraseña
+      const modalNueva = new ModalBuilder()
+        .setCustomId('modal_nueva_contraseña')
+        .setTitle('Nueva contraseña')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('nueva_contraseña')
+              .setLabel('Ingresa la nueva contraseña')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+      await interaction.showModal(modalNueva);
     }
   }
 });
 
-// Login
-client.login(process.env.TOKEN);
+// Eliminar cuenta Firestore si un usuario sale o es baneado
+client.on(Events.GuildMemberRemove, async member => {
+  const { doc, deleteDoc } = await import('firebase/firestore');
+  const { db } = await import('./firebase.js');
+  await deleteDoc(doc(db, 'cuentas', member.id));
+});
+
+client.on(Events.GuildBanAdd, async ban => {
+  const { doc, deleteDoc } = await import('firebase/firestore');
+  const { db } = await import('./firebase.js');
+  await deleteDoc(doc(db, 'cuentas', ban.user.id));
+});
+
+client.login(process.env.DISCORD_TOKEN);
