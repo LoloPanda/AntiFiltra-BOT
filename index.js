@@ -193,4 +193,5 @@ client.on(Events.GuildBanAdd, async ban => {
   await deleteDoc(doc(db, 'cuentas', ban.user.id));
 });
 
+import './deploy-commands.js';
 client.login(process.env.DISCORD_TOKEN);
