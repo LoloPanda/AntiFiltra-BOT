@@ -1,27 +1,24 @@
-import { SlashCommandBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } from 'discord.js';
+import { db } from '../firebase.js';
+import { collection, addDoc, getDoc, doc, updateDoc } from 'firebase/firestore';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('cuenta')
-    .setDescription('Gestiona tu cuenta de la Web'),
-
+    .setDescription('Gestiona tu cuenta del sistema GTG.'),
   async execute(interaction) {
-    const crear = new ButtonBuilder()
+    const crearBtn = new ButtonBuilder()
       .setCustomId('crear_cuenta')
-      .setLabel('🆕 Crear cuenta')
+      .setLabel('Crear cuenta')
       .setStyle(ButtonStyle.Success);
+    const cambiarBtn = new ButtonBuilder()
+      .setCustomId('cambiar_pass')
+      .setLabel('Cambiar contraseña')
+      .setStyle(ButtonStyle.Primary);
 
-    const cambiar = new ButtonBuilder()
-      .setCustomId('cambiar_contraseña')
-      .setLabel('🔑 Cambiar contraseña')
-      .setStyle(ButtonStyle.Secondary);
-
-    const row = new ActionRowBuilder().addComponents(crear, cambiar);
-
-    await interaction.reply({
-      content: '🧾 Elige una opción:',
-      components: [row],
-      ephemeral: true,
-    });
+    const row = new ActionRowBuilder().addComponents(crearBtn, cambiarBtn);
+    await interaction.reply({ content: 'Elige una opción:', components: [row], ephemeral: true });
   }
 };
+
+// Interacciones con botones y modals en index.js
