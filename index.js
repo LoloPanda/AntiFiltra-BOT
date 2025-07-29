@@ -1,40 +1,38 @@
-import { Client, GatewayIntentBits, Events, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import path from 'node:path';
+import { Client, GatewayIntentBits, Partials, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, InteractionType } from 'discord.js';
+import { config } from 'dotenv';
+import { db } from './firebase.js';
 import fs from 'node:fs';
-import { fileURLToPath } from 'url';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import path from 'node:path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+config();
 
-// --- FIREBASE CONFIG (sin .env) ---
-const firebaseConfig = {
-  apiKey: 'TU_API_KEY',
-  authDomain: 'TU_AUTH_DOMAIN',
-  projectId: 'TU_PROJECT_ID',
-  storageBucket: 'TU_STORAGE_BUCKET',
-  messagingSenderId: 'TU_MSG_ID',
-  appId: 'TU_APP_ID',
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// --- CLIENT DISCORD ---
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: [Partials.Channel]
 });
+
 client.commands = new Collection();
 
-const comandosPath = path.join(__dirname, 'comandos');
-const commandFiles = fs.readdirSync(comandosPath).filter(file => file.endsWith('.js'));
+// Cargar comandos
+const commandsPath = path.join('./comandos');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
 for (const file of commandFiles) {
-  const command = await import(path.join(comandosPath, file));
+  const command = await import(`./comandos/${file}`);
   client.commands.set(command.default.data.name, command.default);
 }
 
-client.on(Events.InteractionCreate, async interaction => {
+client.on('ready', () => {
+  console.log(`✅ Bot conectado como ${client.user.tag}`);
+});
+
+client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -42,132 +40,116 @@ client.on(Events.InteractionCreate, async interaction => {
       await command.execute(interaction, client, db);
     } catch (error) {
       console.error(error);
-      if (!interaction.replied) {
-        await interaction.reply({ content: '❌ Hubo un error ejecutando el comando.', ephemeral: true });
-      }
+      await interaction.reply({ content: '❌ Error al ejecutar el comando.', ephemeral: true });
     }
   }
 
+  // Botones
   if (interaction.isButton()) {
-    if (interaction.customId === 'crear_cuenta') {
-      const modal = new ModalBuilder()
-        .setCustomId('modal_crear')
-        .setTitle('Crear cuenta')
-        .addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('nombre_usuario')
-              .setLabel('Nombre de usuario')
-              .setStyle(TextInputStyle.Short)
-              .setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('contraseña')
-              .setLabel('Contraseña')
-              .setStyle(TextInputStyle.Short)
-              .setRequired(true)
-          )
-        );
-      await interaction.showModal(modal);
-    }
+    const { customId, user } = interaction;
 
-    if (interaction.customId.startsWith('confirmar_cambio_')) {
-      const userId = interaction.customId.split('_')[2];
+    if (customId === 'crearCuenta') {
       const modal = new ModalBuilder()
-        .setCustomId(`nueva_contraseña_${userId}`)
-        .setTitle('Nueva Contraseña')
-        .addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('nueva_pass')
-              .setLabel('Nueva contraseña')
-              .setStyle(TextInputStyle.Short)
-              .setRequired(true)
-          )
-        );
-      await interaction.showModal(modal);
-    }
+        .setCustomId('modalCrearCuenta')
+        .setTitle('Crear cuenta');
 
-    if (interaction.customId === 'cambiar_contraseña') {
+      const inputs = [
+        new TextInputBuilder().setCustomId('usuario').setLabel('Nombre de Usuario').setStyle(TextInputStyle.Short).setRequired(true),
+        new TextInputBuilder().setCustomId('discord').setLabel('Usuario de Discord').setStyle(TextInputStyle.Short).setRequired(true),
+        new TextInputBuilder().setCustomId('clave').setLabel('Contraseña').setStyle(TextInputStyle.Short).setRequired(true)
+      ];
+
+      modal.addComponents(inputs.map(input => new ActionRowBuilder().addComponents(input)));
+      await interaction.showModal(modal);
+
+    } else if (customId === 'cambiarClave') {
       const modal = new ModalBuilder()
-        .setCustomId('modal_cambiar')
-        .setTitle('Cambiar contraseña')
-        .addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId('usuario')
-              .setLabel('Usuario registrado')
-              .setStyle(TextInputStyle.Short)
-              .setRequired(true)
-          )
-        );
+        .setCustomId('modalVerificarCuenta')
+        .setTitle('Verificación');
+
+      const usuario = new TextInputBuilder()
+        .setCustomId('usuarioVerificar')
+        .setLabel('Usuario registrado')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(usuario));
+      await interaction.showModal(modal);
+
+    } else if (customId.startsWith('confirmarCambio_')) {
+      const usuario = customId.split('_')[1];
+      const modal = new ModalBuilder()
+        .setCustomId(`modalNuevaClave_${usuario}`)
+        .setTitle('Nueva contraseña');
+
+      const nuevaClave = new TextInputBuilder()
+        .setCustomId('nuevaClave')
+        .setLabel('Nueva Contraseña')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(nuevaClave));
       await interaction.showModal(modal);
     }
   }
 
-  if (interaction.isModalSubmit()) {
-    if (interaction.customId === 'modal_crear') {
-      const nombre = interaction.fields.getTextInputValue('nombre_usuario');
-      const pass = interaction.fields.getTextInputValue('contraseña');
-      const miembro = interaction.member;
-
-      const rolTexto = miembro.roles.cache.find(r =>
-        ['Jefe', 'Secretario', 'Moderador', 'Chofer'].includes(r.name)
-      )?.name || 'Desconocido';
-
-      await setDoc(doc(db, 'cuentas', interaction.user.id), {
-        usuario: nombre,
-        contraseña: pass,
-        rol: rolTexto,
-        viaje: '',
-        viajes: [],
-      });
-
-      await interaction.reply({ content: `✅ Cuenta creada como ${nombre} con rol ${rolTexto}`, ephemeral: true });
-    }
-
-    if (interaction.customId === 'modal_cambiar') {
+  // Modals
+  if (interaction.type === InteractionType.ModalSubmit) {
+    if (interaction.customId === 'modalCrearCuenta') {
       const usuario = interaction.fields.getTextInputValue('usuario');
-      const snapshot = await getDoc(doc(db, 'cuentas', interaction.user.id));
+      const discord = interaction.fields.getTextInputValue('discord');
+      const clave = interaction.fields.getTextInputValue('clave');
+      const member = await interaction.guild.members.fetch(interaction.user.id);
+      const rol = member.roles.cache.find(r => ['Jefe', 'Secretario', 'Chofer', 'Moderador'].includes(r.name))?.name || 'Sin Rol';
 
-      if (!snapshot.exists() || snapshot.data().usuario !== usuario) {
-        return await interaction.reply({ content: '❌ Usuario no encontrado o no coincide con tu ID.', ephemeral: true });
+      try {
+        await db.collection('cuentas').doc(usuario).set({
+          usuario,
+          discord,
+          clave,
+          rol
+        });
+        await interaction.reply({ content: '✅ Cuenta creada con éxito.', ephemeral: true });
+      } catch (err) {
+        console.error(err);
+        await interaction.reply({ content: '❌ Error al guardar la cuenta.', ephemeral: true });
       }
 
-      const embed = new EmbedBuilder()
-        .setTitle('Confirmación de cambio de contraseña')
-        .setDescription('Haz clic en el botón para confirmar el cambio de contraseña.')
-        .setColor('Orange');
+    } else if (interaction.customId === 'modalVerificarCuenta') {
+      const usuario = interaction.fields.getTextInputValue('usuarioVerificar');
+      const doc = await db.collection('cuentas').doc(usuario).get();
+      if (!doc.exists) return interaction.reply({ content: '❌ Usuario no encontrado.', ephemeral: true });
 
-      const boton = new ButtonBuilder()
-        .setLabel('Confirmar')
-        .setStyle(ButtonStyle.Danger)
-        .setCustomId(`confirmar_cambio_${interaction.user.id}`);
+      try {
+        const embed = new EmbedBuilder()
+          .setTitle('Confirmación de cambio de contraseña')
+          .setDescription(`¿Confirmás que querés cambiar la contraseña de la cuenta **${usuario}**?`)
+          .setColor('Blue');
 
-      await interaction.user.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(boton)] });
-      await interaction.reply({ content: '📩 Te enviamos un DM para confirmar.', ephemeral: true });
-    }
+        const button = new ButtonBuilder()
+          .setLabel('Sí, confirmar')
+          .setStyle(ButtonStyle.Success)
+          .setCustomId(`confirmarCambio_${usuario}`);
 
-    if (interaction.customId.startsWith('nueva_contraseña_')) {
-      const userId = interaction.customId.split('_')[2];
-      const nuevaPass = interaction.fields.getTextInputValue('nueva_pass');
-      await updateDoc(doc(db, 'cuentas', userId), {
-        contraseña: nuevaPass,
-      });
+        await interaction.user.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(button)] });
+        await interaction.reply({ content: '✅ Te enviamos un mensaje privado para confirmar.', ephemeral: true });
+      } catch (err) {
+        await interaction.reply({ content: '❌ No pudimos enviarte un DM.', ephemeral: true });
+      }
 
-      await interaction.reply({ content: '✅ Contraseña actualizada con éxito.', ephemeral: true });
+    } else if (interaction.customId.startsWith('modalNuevaClave_')) {
+      const usuario = interaction.customId.split('_')[1];
+      const nuevaClave = interaction.fields.getTextInputValue('nuevaClave');
+
+      try {
+        await db.collection('cuentas').doc(usuario).update({ clave: nuevaClave });
+        await interaction.reply({ content: '✅ Contraseña actualizada.', ephemeral: true });
+      } catch (err) {
+        await interaction.reply({ content: '❌ Error al actualizar.', ephemeral: true });
+      }
     }
   }
 });
 
-client.on(Events.GuildMemberRemove, async member => {
-  await deleteDoc(doc(db, 'cuentas', member.id));
-});
-
-client.on(Events.GuildBanAdd, async ban => {
-  await deleteDoc(doc(db, 'cuentas', ban.user.id));
-});
-
-// --- LOGIN ---
-client.login('TU_TOKEN_DE_DISCORD');
+// Login
+client.login(process.env.TOKEN);
