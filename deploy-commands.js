@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'url';
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
